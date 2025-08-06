@@ -19,11 +19,17 @@ interface Restaurant {
   cuisine: string;
   address: string;
   comment?: string;
+  aiSummary?: string;
+  priceRange?: string;
+  score?: number;
+  hours?: string;
+  expertComment?: string;
 }
 
 interface RestaurantStats {
   totalAnalyzed: number;
   totalValid: number;
+  totalRecommended: number;
 }
 
 export default function RestaurantDiscovery() {
@@ -159,38 +165,46 @@ export default function RestaurantDiscovery() {
     const restaurants: Restaurant[] = [];
     let currentRestaurant: Partial<Restaurant> = {};
     let stats: RestaurantStats | null = null;
+    let collectingComment = false;
+    let commentLines: string[] = [];
 
     for (const line of lines) {
       if (line.startsWith("🍽️")) {
         // Skip title lines
         continue;
-      } else if (line.startsWith("📊")) {
-        // Parse stats line: "📊 _7 analysés • 7 valides_"
-        const statsMatch = line.match(/(\d+)\s*analysés\s*•\s*(\d+)\s*valides/);
+      } else if (line.startsWith("🤖")) {
+        // Parse stats line: "🤖 _2 analysés • 2 validés • 2 recommandés_"
+        const statsMatch = line.match(
+          /(\d+)\s*analysés\s*•\s*(\d+)\s*validés\s*•\s*(\d+)\s*recommandés/
+        );
         if (statsMatch) {
           stats = {
             totalAnalyzed: parseInt(statsMatch[1]),
             totalValid: parseInt(statsMatch[2]),
+            totalRecommended: parseInt(statsMatch[3]),
           };
         }
         continue;
-      } else if (/^[1-9]️⃣/.test(line)) {
-        // Restaurant name (ex: "1️⃣ *Holly's Diner*")
+      } else if (/^🥇|🥈|🥉/.test(line)) {
+        // Restaurant name (ex: "🥇 *Les Fables Gourmandes*")
         if (Object.keys(currentRestaurant).length > 0) {
           restaurants.push(currentRestaurant as Restaurant);
           currentRestaurant = {};
         }
+        collectingComment = false;
+        commentLines = [];
         currentRestaurant.name = line
-          .replace(/[1-9]️⃣\s*\*?/g, "")
+          .replace(/🥇\s*\*?|🥈\s*\*?|🥉\s*\*?/g, "")
           .replace(/\*/g, "")
           .trim();
       } else if (line.startsWith("📍")) {
         // Address
         currentRestaurant.address = line.slice(2).trim();
       } else if (line.startsWith("⭐️")) {
-        // Rating and reviews - Format: "⭐️ 4.1/5 • 1242 avis • Score: 12.7"
+        // Rating and reviews - Format: "⭐️ 4.6/5 • 349 avis • Score: 11.7"
         const ratingMatch = line.match(/(\d+\.?\d*)\s*\/\s*5/);
         const reviewsMatch = line.match(/•\s*(\d+)\s*avis/);
+        const scoreMatch = line.match(/Score:\s*(\d+\.?\d*)/);
 
         if (ratingMatch) {
           currentRestaurant.rating = parseFloat(ratingMatch[1]);
@@ -198,29 +212,120 @@ export default function RestaurantDiscovery() {
         if (reviewsMatch) {
           currentRestaurant.reviews = parseInt(reviewsMatch[1]);
         }
+        if (scoreMatch) {
+          currentRestaurant.score = parseFloat(scoreMatch[1]);
+        }
 
         // Extract distance if present
         const distanceMatch = line.match(/(\d+)\s*m/);
         if (distanceMatch) {
           currentRestaurant.distance = parseInt(distanceMatch[1]);
         }
-      } else if (line.startsWith("💬")) {
-        // Comment
-        const comment = line
-          .slice(2)
+      } else if (line.startsWith("💰")) {
+        // Price range - Format: "💰 €€ (Modéré) • 25-50€/pers" or "💰 Non spécifié"
+        currentRestaurant.priceRange = line.slice(2).trim();
+      } else if (line.startsWith("🕐")) {
+        // Hours - Format: "🕐 Aujourd'hui: 12:00 – 14:00, 19:30 – 20:45 (Fermé)"
+        currentRestaurant.hours = line.slice(2).trim();
+      } else if (line.startsWith("🎯")) {
+        // Expert comment - Format: "🎯 _\"Cuisine raffinée, service attentionné, produits frais, modéré\"_"
+        const expertComment = line
+          .slice(3) // Remove "🎯 " prefix
+          .replace(/^_"/, "")
+          .replace(/"_$/, "")
+          .replace(/"/g, "")
+          .trim();
+        if (expertComment) {
+          currentRestaurant.expertComment = expertComment;
+        }
+      } else if (line.startsWith("👨‍🍳")) {
+        // AI Summary - Format: "👨‍🍳 _\"Excellence culinaire, service remarquable, expérience mémorable\"_"
+        const aiSummary = line
+          .slice(4) // Remove "👨‍🍳 " prefix
           .replace(/^_/, "")
           .replace(/_$/, "")
           .replace(/"/g, "")
           .trim();
-        if (comment) {
-          currentRestaurant.comment = comment;
+        if (aiSummary) {
+          currentRestaurant.aiSummary = aiSummary;
         }
-      } else if (line.startsWith("—")) {
+      } else if (line.startsWith("💬")) {
+        // Check if this is the start of the latest review section
+        if (line.includes("*Dernier avis*")) {
+          // Start collecting comment lines
+          collectingComment = true;
+          commentLines = [];
+          continue;
+        }
+      } else if (collectingComment) {
+        // We're collecting comment lines
+        if (
+          line.startsWith("━━━━━━━━━━━━━━━") ||
+          /^🥇|🥈|🥉/.test(line) ||
+          line.startsWith("🤖")
+        ) {
+          // End of comment section
+          collectingComment = false;
+          if (commentLines.length > 0) {
+            let comment = commentLines
+              .join(" ")
+              .replace(/^_"/, "")
+              .replace(/"_$/, "")
+              .replace(/"/g, "")
+              .replace(/\.\.\.$/, "")
+              .replace(/^_/, "")
+              .replace(/_$/, "")
+              .trim();
+
+            if (comment) {
+              currentRestaurant.comment = comment;
+            }
+          }
+          commentLines = [];
+
+          // Process this line normally if it's not a separator
+          if (/^🥇|🥈|🥉/.test(line)) {
+            if (Object.keys(currentRestaurant).length > 0) {
+              restaurants.push(currentRestaurant as Restaurant);
+              currentRestaurant = {};
+            }
+            currentRestaurant.name = line
+              .replace(/🥇\s*\*?|🥈\s*\*?|🥉\s*\*?/g, "")
+              .replace(/\*/g, "")
+              .trim();
+          } else if (line.startsWith("━━━━━━━━━━━━━━━")) {
+            if (Object.keys(currentRestaurant).length > 0) {
+              restaurants.push(currentRestaurant as Restaurant);
+              currentRestaurant = {};
+            }
+          }
+        } else {
+          // Add this line to the comment
+          commentLines.push(line.trim());
+        }
+      } else if (line.startsWith("━━━━━━━━━━━━━━━")) {
         // End of restaurant
         if (Object.keys(currentRestaurant).length > 0) {
           restaurants.push(currentRestaurant as Restaurant);
           currentRestaurant = {};
         }
+      }
+    }
+
+    // Handle any remaining comment collection at the end
+    if (collectingComment && commentLines.length > 0) {
+      let comment = commentLines
+        .join(" ")
+        .replace(/^_"/, "")
+        .replace(/"_$/, "")
+        .replace(/"/g, "")
+        .replace(/\.\.\.$/, "")
+        .replace(/^_/, "")
+        .replace(/_$/, "")
+        .trim();
+
+      if (comment) {
+        currentRestaurant.comment = comment;
       }
     }
 
@@ -238,6 +343,11 @@ export default function RestaurantDiscovery() {
       cuisine: restaurant.cuisine || "Non spécifié",
       address: restaurant.address || "Adresse non disponible",
       comment: restaurant.comment,
+      aiSummary: restaurant.aiSummary,
+      priceRange: restaurant.priceRange,
+      score: restaurant.score,
+      hours: restaurant.hours,
+      expertComment: restaurant.expertComment,
     }));
 
     return { restaurants: processedRestaurants, stats };
@@ -316,13 +426,18 @@ export default function RestaurantDiscovery() {
     searchRestaurants();
   };
 
+  console.log(restaurants);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 relative overflow-hidden">
       {/* Liquid Glass Background */}
-      <div className="fixed inset-0 -z-10">
-        <div className="absolute top-20 left-20 w-96 h-96 bg-gradient-to-r from-blue-400/20 to-purple-400/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-20 w-80 h-80 bg-gradient-to-r from-purple-400/20 to-pink-400/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-gradient-to-r from-cyan-400/20 to-blue-400/20 rounded-full blur-3xl animate-pulse delay-500"></div>
+      <div className="fixed inset-0 -z-10 pointer-events-none">
+        {/* Layered gradients for depth */}
+        <div className="absolute top-10 left-10 w-[32rem] h-[32rem] bg-gradient-to-br from-blue-300/30 via-white/10 to-purple-300/30 rounded-full blur-3xl shadow-2xl animate-pulse"></div>
+        <div className="absolute bottom-20 right-20 w-[28rem] h-[28rem] bg-gradient-to-br from-purple-300/30 via-pink-200/20 to-blue-200/20 rounded-full blur-2xl shadow-xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[20rem] h-[20rem] bg-gradient-to-br from-cyan-200/30 to-blue-200/20 rounded-full blur-2xl shadow-lg animate-pulse delay-500"></div>
+        {/* Soft light overlay */}
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-2xl mix-blend-lighten"></div>
       </div>
 
       {/* Header */}
@@ -340,7 +455,9 @@ export default function RestaurantDiscovery() {
       {/* Hero Section */}
       <section
         ref={heroRef}
-        className="relative z-10 min-h-[70vh] flex items-center justify-center px-6"
+        className={`relative z-10 min-h-[${
+          restaurants.length > 0 ? "20vh" : "70vh"
+        }] flex items-center justify-center px-6`}
       >
         <div className="text-center max-w-4xl mx-auto">
           <h1
@@ -444,8 +561,9 @@ export default function RestaurantDiscovery() {
                 <div className="inline-flex items-center gap-2 backdrop-blur-md bg-blue-50/80 border border-blue-200 rounded-xl px-6 py-3 text-blue-800 font-semibold">
                   <span className="text-2xl">📊</span>
                   <span>
-                    {restaurantStats.totalAnalyzed} restaurants analysés • 3
-                    restaurants valides
+                    {restaurantStats.totalAnalyzed} analysés •{" "}
+                    {restaurantStats.totalValid} validés •{" "}
+                    {restaurantStats.totalRecommended} recommandés
                   </span>
                 </div>
               </div>
@@ -455,68 +573,93 @@ export default function RestaurantDiscovery() {
               évaluation équilibrée entre qualité et nombre d'avis.
             </p>
 
-            <div ref={cardsRef} className="grid md:grid-cols-3 gap-8">
+            <div ref={cardsRef} className="grid md:grid-cols-3 gap-10">
               {restaurants.map((restaurant, index) => (
                 <div
                   key={index}
-                  className="h-full backdrop-blur-md bg-white/30 rounded-3xl p-8 border border-white/40 shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-500 group flex flex-col"
+                  tabIndex={0}
+                  aria-label={`Carte du restaurant ${restaurant.name}`}
+                  className="group h-full relative overflow-hidden backdrop-blur-2xl bg-white/30 border border-white/50 rounded-3xl p-8 shadow-2xl hover:shadow-[0_8px_32px_0_rgba(31,38,135,0.25)] transition-all duration-500 flex flex-col focus:outline-none focus:ring-4 focus:ring-blue-300/40"
                 >
+                  {/* Animated glass border */}
+                  <div className="absolute inset-0 rounded-3xl pointer-events-none border-2 border-transparent group-hover:border-blue-400/60 group-focus:border-blue-500/80 transition-all duration-500"></div>
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-3xl font-bold text-blue-600">
+                    <span className="text-3xl font-extrabold text-blue-700 drop-shadow-sm">
                       #{index + 1}
                     </span>
-                    <div className="flex items-center gap-1 bg-yellow-100 px-3 py-1 rounded-full">
-                      <span className="text-yellow-600">⭐️</span>
-                      <span className="font-semibold text-yellow-700">
-                        {restaurant.rating > 0
-                          ? `${restaurant.rating}/5`
-                          : "Pas de note"}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 bg-yellow-100/80 px-3 py-1 rounded-full shadow-sm">
+                        <span className="text-yellow-600 text-xl">⭐️</span>
+                        <span className="font-semibold text-yellow-700">
+                          {restaurant.rating > 0
+                            ? `${restaurant.rating}/5`
+                            : "Pas de note"}
+                        </span>
+                      </div>
                     </div>
                   </div>
-
-                  <h3 className="text-2xl font-bold text-blue-600 mb-4 group-hover:text-blue-600 transition-colors">
+                  <h3 className="text-2xl font-bold text-blue-700 mb-4 group-hover:text-blue-800 transition-colors">
                     {restaurant.name}
                   </h3>
-
-                  <div className="flex-1 space-y-3 text-sm">
-                    <div className="flex items-start gap-2 text-gray-600">
-                      <span>📍</span>
+                  <div className="flex-1 space-y-4 text-base">
+                    <div className="flex items-start gap-2 text-gray-700">
+                      <span className="text-lg">📍</span>
                       <span>{restaurant.address}</span>
                     </div>
-
-                    {/* Affichage séparé du nombre d'avis */}
-                    {restaurant.reviews > 0 && (
-                      <div className="flex justify-end gap-2">
-                        <span className="text-blue-500">💬</span>
-                        <span className="font-semibold text-blue-700">
-                          {restaurant.reviews} avis
+                    {restaurant.expertComment && (
+                      <div className="flex items-center gap-2 text-purple-700/90 bg-purple-100/40 px-3 py-2 rounded-xl text-sm">
+                        <span
+                          className="text-lg"
+                          aria-label="Commentaire IA"
+                          title="Commentaire IA"
+                        >
+                          🤖
+                        </span>
+                        <span>
+                          Résumé de notre AI: <br /> {restaurant.expertComment}
                         </span>
                       </div>
                     )}
-                  </div>
-
-                  {/* Comment section at bottom */}
-                  <div className="mt-4 min-h-[3rem]">
-                    {restaurant.comment ? (
-                      <div className="bg-gray-50 p-3 rounded-md border-l-4 border-blue-200">
-                        <p className="italic text-gray-700 text-sm">
-                          💬 {restaurant.comment}
-                        </p>
+                    {restaurant.hours && (
+                      <div className="flex items-center gap-2 text-blue-700/80 bg-blue-100/40 px-3 py-2 rounded-xl text-sm">
+                        <span className="text-lg">🕐</span>
+                        <span>{restaurant.hours}</span>
                       </div>
-                    ) : (
-                      <div className="h-12"></div>
+                    )}
+                    {restaurant.priceRange && (
+                      <div className="flex items-center gap-2 text-green-700/80 bg-green-100/40 px-3 py-2 rounded-xl text-sm">
+                        <span className="text-lg">💰</span>
+                        <span>{restaurant.priceRange}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 text-gray-500 text-sm mt-2">
+                      <span className="text-lg">🔥</span>
+                      <span>{restaurant.cuisine}</span>
+                      <span className="ml-auto text-blue-700 font-semibold">
+                        {restaurant.reviews} avis
+                      </span>
+                    </div>
+                    {restaurant.comment && (
+                      <div className="mt-4 bg-white/60 rounded-xl p-4 text-gray-700 text-sm shadow-inner border border-white/30">
+                        <span className="block mb-1 text-blue-700 font-semibold">
+                          💬 Avis récent
+                        </span>
+                        <span>{restaurant.comment}</span>
+                      </div>
                     )}
                   </div>
                   <a
                     href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                      restaurant.address
+                      restaurant.name + " " + restaurant.address
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full mt-6 bg-gradient-to-r from-blue-500 to-purple-500 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-600 transition-all duration-300 transform hover:scale-105 text-center block"
+                    tabIndex={0}
+                    aria-label={`Voir ${restaurant.name} sur Google Maps`}
+                    className="mt-8 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-500/80 to-purple-500/80 text-white font-semibold shadow-lg hover:scale-105 hover:shadow-xl transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400/60"
                   >
-                    Voir sur Google Maps
+                    <span>Voir sur Google Maps</span>
+                    <span className="text-lg">↗️</span>
                   </a>
                 </div>
               ))}
