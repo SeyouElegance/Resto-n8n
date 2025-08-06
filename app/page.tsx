@@ -363,7 +363,7 @@ export default function RestaurantDiscovery() {
 
     try {
       const location = userLocation || (await getUserLocation());
-      const url = `https://semmyhkm.app.n8n.cloud/webhook-test/resto-reco?latitude=${location.lat}&longitude=${location.lng}&radius=${radius}`;
+      const url = `https://semmyhkm.app.n8n.cloud/webhook/resto-reco?latitude=${location.lat}&longitude=${location.lng}&radius=${radius}`;
 
       const response = await fetch(url);
 
