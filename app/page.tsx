@@ -3,6 +3,7 @@
 import type React from "react";
 
 import { useEffect, useRef, useState } from "react";
+import { BetaBadge } from "./components/beta-badge";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -362,7 +363,7 @@ export default function RestaurantDiscovery() {
 
     try {
       const location = userLocation || (await getUserLocation());
-      const url = `http://localhost:5678/webhook/resto-reco?latitude=${location.lat}&longitude=${location.lng}&radius=${radius}`;
+      const url = `https://semmyhkm.app.n8n.cloud/webhook-test/resto-reco?latitude=${location.lat}&longitude=${location.lng}&radius=${radius}`;
 
       const response = await fetch(url);
 
@@ -443,11 +444,22 @@ export default function RestaurantDiscovery() {
       {/* Header */}
       <header className="relative z-10 p-6">
         <nav className="flex justify-between items-center max-w-7xl mx-auto">
-          <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            🍽️ Restaurants autour de moi
+          <div className="flex items-center gap-4">
+            <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              🍽️ Restaurants autour de moi
+            </div>
+            <BetaBadge />
           </div>
           <div className="text-sm text-gray-600 backdrop-blur-sm bg-white/20 px-4 py-2 rounded-full border border-white/30">
-            ✨ Propulsé par IA - n8n
+            ✨ Propulsé par n8n -{" "}
+            <a
+              href="https://www.linkedin.com/in/semmy-hakimi-b17319b1/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent"
+            >
+              Semmy Hakimi
+            </a>
           </div>
         </nav>
       </header>
@@ -455,9 +467,9 @@ export default function RestaurantDiscovery() {
       {/* Hero Section */}
       <section
         ref={heroRef}
-        className={`relative z-10 min-h-[${
-          restaurants.length > 0 ? "20vh" : "70vh"
-        }] flex items-center justify-center px-6`}
+        className={`relative z-10 ${
+          restaurants.length > 0 ? "min-h-screen" : "min-h-[80vh]"
+        } flex items-center justify-center px-6`}
       >
         <div className="text-center max-w-4xl mx-auto">
           <h1
@@ -672,7 +684,15 @@ export default function RestaurantDiscovery() {
       <footer className="relative z-10 py-12 px-6 backdrop-blur-sm bg-white/10 border-t border-white/20">
         <div className="max-w-4xl mx-auto text-center">
           <p className="text-gray-600 mb-4">
-            Made with ❤️ for food lovers • Powered by AI recommendations
+            Made with ❤️ for food lovers • Powered by AI recommendations •{" "}
+            <a
+              href="https://www.linkedin.com/in/semmy-hakimi-b17319b1/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent"
+            >
+              Semmy Hakimi
+            </a>
           </p>
           <div className="flex justify-center gap-6 text-sm text-gray-500">
             <span>🍽️ Restaurants</span>
