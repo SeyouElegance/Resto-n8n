@@ -576,7 +576,7 @@ export default function RestaurantDiscovery() {
       </section>
 
       {/* Rate Limit Status Section */}
-      <section className="relative z-10 px-6">
+      <section className="relative z-10 px-6 py-4">
         <div className="max-w-xl mx-auto">
           <div
             className={`backdrop-blur-md border rounded-lg p-4 text-center text-sm ${
