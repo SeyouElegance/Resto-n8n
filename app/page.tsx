@@ -4,6 +4,7 @@ import type React from "react";
 
 import { useEffect, useRef, useState } from "react";
 import { BetaBadge } from "./components/beta-badge";
+import { useRateLimit } from "../hooks/useRateLimit";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -44,6 +45,13 @@ export default function RestaurantDiscovery() {
     lat: number;
     lng: number;
   } | null>(null);
+
+  // Rate limiting hook
+  const rateLimit = useRateLimit({
+    maxRequests: 2,
+    windowMs: 24 * 60 * 60 * 1000, // 24 heures pour version BETA
+    storageKey: "restaurant-search-rate-limit",
+  });
 
   const heroRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -355,6 +363,17 @@ export default function RestaurantDiscovery() {
   };
 
   const searchRestaurants = async () => {
+    // Vérifier le rate limiting côté client d'abord
+    if (rateLimit.checkRateLimit()) {
+      const hoursLeft = Math.ceil(
+        rateLimit.getRemainingTime() / (1000 * 60 * 60)
+      );
+      setError(
+        `🚫 Limite de 2 recherches atteinte. Réessayez dans ${hoursLeft}h (version BETA).`
+      );
+      return;
+    }
+
     setLoading(true);
     setError(null);
     // Clear previous results before starting new search
@@ -363,11 +382,16 @@ export default function RestaurantDiscovery() {
 
     try {
       const location = userLocation || (await getUserLocation());
-      const url = `https://semmyhkm.app.n8n.cloud/webhook/resto-reco?latitude=${location.lat}&longitude=${location.lng}&radius=${radius}`;
+      // Utiliser notre API locale avec rate limiting par IP
+      const url = `/api/restaurants?latitude=${location.lat}&longitude=${location.lng}&radius=${radius}`;
 
       const response = await fetch(url);
 
       if (!response.ok) {
+        if (response.status === 429) {
+          // Rate limit dépassé côté serveur
+          return;
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -382,6 +406,12 @@ export default function RestaurantDiscovery() {
       );
       setRestaurants(parsedRestaurants);
       setRestaurantStats(stats);
+
+      // Afficher les informations de rate limiting en console pour debug
+      const remaining = response.headers.get("X-RateLimit-Remaining");
+      if (remaining) {
+        console.log(`Requêtes restantes: ${remaining}/2`);
+      }
     } catch (error) {
       console.error("Error fetching restaurants:", error);
       setError(
@@ -427,8 +457,6 @@ export default function RestaurantDiscovery() {
     searchRestaurants();
   };
 
-  console.log(restaurants);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 relative overflow-hidden">
       {/* Liquid Glass Background */}
@@ -468,7 +496,7 @@ export default function RestaurantDiscovery() {
       <section
         ref={heroRef}
         className={`relative z-10 ${
-          restaurants.length > 0 ? "min-h-screen" : "min-h-[80vh]"
+          restaurants.length > 0 ? "min-h-[60vh]" : "min-h-[60vh]"
         } flex items-center justify-center px-6`}
       >
         <div className="text-center max-w-4xl mx-auto">
@@ -521,8 +549,12 @@ export default function RestaurantDiscovery() {
           <button
             ref={ctaRef}
             onClick={handleCTAClick}
-            disabled={loading}
-            className="relative overflow-hidden bg-gradient-to-r from-blue-600 to-purple-600 text-white px-12 py-4 rounded-2xl text-xl font-semibold shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed group"
+            disabled={loading || rateLimit.isLimited}
+            className={`relative overflow-hidden text-white px-12 py-4 rounded-2xl text-xl font-semibold shadow-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
+              rateLimit.isLimited
+                ? "bg-gray-500"
+                : "bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-3xl transform hover:scale-105 group"
+            }`}
           >
             <span className="relative z-10 flex items-center gap-3">
               {loading ? (
@@ -530,35 +562,45 @@ export default function RestaurantDiscovery() {
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
                   📡 Recherche en cours...
                 </>
+              ) : rateLimit.isLimited ? (
+                <>🚫 Limite atteinte (2/2)</>
               ) : (
                 <>🔍 Lancer la recherche</>
               )}
             </span>
-            <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            {!rateLimit.isLimited && (
+              <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            )}
           </button>
         </div>
       </section>
 
-      {/* Error Section */}
-      {error && (
-        <section className="relative z-10 py-10 px-6">
-          <div className="max-w-xl mx-auto">
-            <div className="backdrop-blur-md bg-red-50/80 border border-red-200 rounded-2xl p-6 text-center">
-              <div className="text-red-500 text-lg mb-2">
-                ❌ Une erreur est survenue
-              </div>
-              {/* if no item is return, display a message */}
-              {restaurants.length === 0 && (
-                <p className="text-gray-600">
-                  Aucun restaurant trouvé autour de vous.
-                  <br /> Veuillez réessayer avec un rayon de recherche plus
-                  large.
-                </p>
-              )}
+      {/* Rate Limit Status Section */}
+      <section className="relative z-10 px-6">
+        <div className="max-w-xl mx-auto">
+          <div
+            className={`backdrop-blur-md border rounded-lg p-4 text-center text-sm ${
+              rateLimit.isLimited
+                ? "bg-red-50/50 border-red-200"
+                : "bg-blue-50/50 border-blue-200"
+            }`}
+          >
+            <div className="flex justify-center items-center">
+              <span
+                className={
+                  rateLimit.isLimited ? "text-red-600" : "text-gray-600"
+                }
+              >
+                Recherches utilisées:{" "}
+                <strong>{2 - rateLimit.remainingRequests}/2</strong>
+                <span className="ml-2 text-xs">
+                  {rateLimit.isLimited ? "(LIMITE ATTEINTE)" : "(VERSION BETA)"}
+                </span>
+              </span>
             </div>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       {/* Results Section */}
       {restaurants.length > 0 && (
