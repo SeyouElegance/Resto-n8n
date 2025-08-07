@@ -472,23 +472,16 @@ export default function RestaurantDiscovery() {
       {/* Header */}
       <header className="relative z-10 p-6">
         <nav className="flex justify-between items-center max-w-7xl mx-auto">
-          <div className="flex items-center gap-4">
-            <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              🍽️ Restaurants autour de moi
+          {/* Icône + Titre à gauche */}
+          <div className="flex items-center gap-2">
+            <span className="text-base md:text-2xl">🍽️</span>
+            <div className="text-base md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Restaurants autour de moi
             </div>
-            <BetaBadge />
           </div>
-          <div className="text-sm text-gray-600 backdrop-blur-sm bg-white/20 px-4 py-2 rounded-full border border-white/30">
-            ✨ Propulsé par n8n -{" "}
-            <a
-              href="https://www.linkedin.com/in/semmy-hakimi-b17319b1/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent"
-            >
-              Semmy Hakimi
-            </a>
-          </div>
+
+          {/* BETA à droite */}
+          <BetaBadge />
         </nav>
       </header>
 
